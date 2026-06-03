@@ -1,0 +1,1549 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STM32 示波器与信号发生器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151515;
+      --panel: #242424;
+      --panel-2: #303030;
+      --bezel: #0b0f0c;
+      --line: #474747;
+      --text: #ece7dc;
+      --muted: #a9a094;
+      --green: #49f29b;
+      --amber: #f2b84b;
+      --red: #ff6b5f;
+      --blue: #62b7ff;
+      --shadow: rgba(0, 0, 0, 0.35);
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, #202020 0%, #121212 100%);
+      color: var(--text);
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .bench {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      padding: 14px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 52px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      background: #202020;
+      box-shadow: 0 10px 28px var(--shadow);
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 260px;
+    }
+
+    .brand strong {
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .connection {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 170px;
+      padding: 8px 10px;
+      border: 1px solid #555;
+      background: #191919;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #6a6a6a;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+      flex: 0 0 auto;
+    }
+
+    .status-dot.online {
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(73, 242, 155, 0.8);
+    }
+
+    .status-dot.busy {
+      background: var(--amber);
+      box-shadow: 0 0 12px rgba(242, 184, 75, 0.8);
+    }
+
+    .status-dot.error {
+      background: var(--red);
+      box-shadow: 0 0 12px rgba(255, 107, 95, 0.8);
+    }
+
+    .btn {
+      min-height: 36px;
+      border: 1px solid #5b5b5b;
+      background: linear-gradient(#393939, #272727);
+      color: var(--text);
+      padding: 0 12px;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .btn:hover {
+      border-color: #777;
+      background: linear-gradient(#444, #2d2d2d);
+    }
+
+    .btn:active,
+    .btn.active {
+      transform: translateY(1px);
+      background: linear-gradient(#1f1f1f, #343434);
+      color: var(--green);
+      border-color: var(--green);
+    }
+
+    .btn.primary {
+      border-color: #8d6a24;
+      color: #fff3d6;
+      background: linear-gradient(#a77722, #654615);
+    }
+
+    .btn.danger.active {
+      color: #ffd6d2;
+      border-color: var(--red);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(520px, 1.45fr) minmax(360px, 0.9fr);
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .instrument {
+      border: 1px solid #4c4c4c;
+      background: var(--panel);
+      box-shadow: 0 16px 36px var(--shadow);
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .instrument-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 48px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #444;
+      background: linear-gradient(#303030, #222);
+    }
+
+    .instrument-title h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .instrument-title .model {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .scope-body {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(310px, 1fr) auto;
+      gap: 12px;
+      padding: 14px;
+    }
+
+    .screen-wrap {
+      min-height: 310px;
+      border: 10px solid #111;
+      background: var(--bezel);
+      box-shadow: inset 0 0 0 1px #2f3a34, inset 0 0 35px rgba(73, 242, 155, 0.08);
+      position: relative;
+    }
+
+    #scopeCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 310px;
+      background: #06100b;
+    }
+
+    .screen-readout {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 8px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      pointer-events: none;
+      color: #bfffd9;
+      font: 12px Consolas, "Microsoft YaHei", monospace;
+      text-shadow: 0 0 6px rgba(73, 242, 155, 0.65);
+    }
+
+    .readout-cell {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .scope-controls,
+    .generator-body {
+      display: grid;
+      gap: 12px;
+    }
+
+    .scope-controls {
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      align-items: stretch;
+    }
+
+    .control-bank {
+      border: 1px solid #484848;
+      background: var(--panel-2);
+      padding: 10px;
+      min-width: 0;
+    }
+
+    .bank-title {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .segmented {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      gap: 4px;
+    }
+
+    .segmented button {
+      min-width: 0;
+      min-height: 32px;
+      border: 1px solid #555;
+      background: #202020;
+      color: var(--muted);
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .segmented button.active {
+      color: #111;
+      border-color: var(--amber);
+      background: var(--amber);
+      font-weight: 700;
+    }
+
+    .switch-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .knob-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(130px, 1fr));
+      gap: 12px;
+    }
+
+    .knob-control {
+      min-width: 0;
+      display: grid;
+      justify-items: center;
+      align-content: start;
+      gap: 7px;
+      padding: 8px 4px;
+    }
+
+    .knob {
+      width: 82px;
+      height: 82px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 30%, #777 0%, #454545 28%, #222 62%, #111 100%);
+      border: 1px solid #777;
+      box-shadow:
+        inset -8px -10px 18px rgba(0, 0, 0, 0.5),
+        inset 5px 6px 12px rgba(255, 255, 255, 0.12),
+        0 10px 16px rgba(0, 0, 0, 0.28);
+      position: relative;
+      cursor: ns-resize;
+      touch-action: none;
+    }
+
+    .knob::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 10px;
+      width: 4px;
+      height: 24px;
+      margin-left: -2px;
+      border-radius: 2px;
+      background: var(--amber);
+      box-shadow: 0 0 8px rgba(242, 184, 75, 0.55);
+      transform-origin: 2px 31px;
+      transform: rotate(var(--angle, 0deg));
+    }
+
+    .knob-value {
+      min-height: 25px;
+      width: 118px;
+      border: 1px solid #4b4b4b;
+      background: #151515;
+      color: var(--green);
+      display: grid;
+      place-items: center;
+      font: 13px Consolas, monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 4px;
+    }
+
+    input.knob-value {
+      min-height: 34px;
+      text-align: center;
+      outline: none;
+      appearance: textfield;
+    }
+
+    input.knob-value::-webkit-outer-spin-button,
+    input.knob-value::-webkit-inner-spin-button {
+      margin: 0;
+    }
+
+    .knob-label {
+      color: var(--text);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+      margin-top: 8px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .field input {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid #555;
+      background: #151515;
+      color: var(--green);
+      padding: 0 9px;
+      outline: none;
+      font-family: Consolas, monospace;
+    }
+
+    .generator-body {
+      grid-template-rows: auto auto 1fr auto;
+      padding: 14px;
+    }
+
+    .display {
+      border: 8px solid #111;
+      background: #10140f;
+      min-height: 118px;
+      padding: 13px;
+      box-shadow: inset 0 0 25px rgba(242, 184, 75, 0.08);
+      display: grid;
+      gap: 6px;
+    }
+
+    .display-main {
+      color: var(--amber);
+      font: 34px Consolas, monospace;
+      line-height: 1;
+      text-shadow: 0 0 9px rgba(242, 184, 75, 0.55);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .display-sub {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      color: #ffdf96;
+      font: 13px Consolas, monospace;
+    }
+
+    .generator-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .log-drawer {
+      border: 1px solid #3f3f3f;
+      background: #181818;
+      min-height: 86px;
+      max-height: 120px;
+      overflow: auto;
+      color: #b7c9bd;
+      font: 11px Consolas, monospace;
+      padding: 8px;
+    }
+
+    .log-drawer div {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .meter-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .meter {
+      min-height: 48px;
+      border: 1px solid #464646;
+      background: #1c1c1c;
+      padding: 7px 8px;
+      display: grid;
+      gap: 3px;
+    }
+
+    .meter span:first-child {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .meter span:last-child {
+      color: var(--green);
+      font: 16px Consolas, monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .scope-controls {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+    }
+
+    @media (max-width: 620px) {
+      .bench {
+        padding: 8px;
+      }
+
+      .topbar,
+      .connection {
+        align-items: stretch;
+      }
+
+      .topbar,
+      .connection,
+      .brand {
+        flex-direction: column;
+      }
+
+      .brand {
+        align-items: flex-start;
+        min-width: 0;
+      }
+
+      .scope-controls,
+      .knob-grid,
+      .display-sub,
+      .meter-strip {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bench">
+    <header class="topbar">
+      <div class="brand">
+        <strong>STM32 数字实验仪</strong>
+        <span>示波器 / 信号发生器一体面板</span>
+      </div>
+      <div class="connection">
+        <div class="status-pill">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText">未连接</span>
+        </div>
+        <button id="connectSimBtn" class="btn primary" title="连接 127.0.0.1:7897 模拟器">连接模拟器</button>
+        <button id="connectSerialBtn" class="btn" title="通过浏览器 Web Serial 连接 DAPmini 的串口 COM 口">连接 DAPmini 串口</button>
+        <button id="disconnectBtn" class="btn">断开</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="instrument">
+        <div class="instrument-title">
+          <h1>数字示波器</h1>
+          <span class="model">CH1: PA0 / ADC1_IN0</span>
+        </div>
+        <div class="scope-body">
+          <div class="screen-wrap">
+            <canvas id="scopeCanvas"></canvas>
+            <div class="screen-readout">
+              <div id="readTime" class="readout-cell">Time 10 ms/div</div>
+              <div id="readVolt" class="readout-cell">Volt 0.50 V/div</div>
+              <div id="readTrig" class="readout-cell">Trig 1.65 V</div>
+              <div id="readRate" class="readout-cell">Rate --</div>
+            </div>
+          </div>
+
+          <div class="scope-controls">
+            <div class="control-bank">
+              <div class="bank-title">采集</div>
+              <div class="switch-row">
+                <button id="runBtn" class="btn active">运行</button>
+                <button id="singleBtn" class="btn">单次</button>
+              </div>
+              <div class="field">
+                <label for="sampleCount">采样点数</label>
+                <input id="sampleCount" type="number" min="64" max="512" step="64" value="512">
+              </div>
+            </div>
+
+            <div class="control-bank">
+              <div class="bank-title">水平</div>
+              <div class="knob-control">
+                <div id="timeKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                <div class="knob-label">Time / Div (ms)</div>
+                <input id="timeValue" class="knob-value editable-value" type="number" min="1" max="500" step="1" value="10" title="Time/Div，单位 ms">
+              </div>
+            </div>
+
+            <div class="control-bank">
+              <div class="bank-title">垂直</div>
+              <div class="knob-grid">
+                <div class="knob-control">
+                  <div id="voltKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                  <div class="knob-label">Volt / Div (V)</div>
+                  <input id="voltValue" class="knob-value editable-value" type="number" min="0.1" max="2" step="0.05" value="0.50" title="Volt/Div，单位 V">
+                </div>
+                <div class="knob-control">
+                  <div id="posKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                  <div class="knob-label">位置 (V)</div>
+                  <input id="posValue" class="knob-value editable-value" type="number" min="0" max="3.3" step="0.05" value="1.65" title="垂直位置，单位 V">
+                </div>
+              </div>
+            </div>
+
+            <div class="control-bank">
+              <div class="bank-title">触发</div>
+              <div class="segmented" id="triggerMode">
+                <button data-value="AUTO" class="active">AUTO</button>
+                <button data-value="NORMAL">NORM</button>
+              </div>
+              <div class="knob-control">
+                <div id="trigKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                <div class="knob-label">电平 (V)</div>
+                <input id="trigValue" class="knob-value editable-value" type="number" min="0" max="3.3" step="0.05" value="1.65" title="触发电平，单位 V">
+              </div>
+            </div>
+          </div>
+
+          <div class="meter-strip">
+            <div class="meter"><span>Vpp</span><span id="meterVpp">--</span></div>
+            <div class="meter"><span>Vavg</span><span id="meterAvg">--</span></div>
+            <div class="meter"><span>Freq</span><span id="meterFreq">--</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="instrument">
+        <div class="instrument-title">
+          <h1>信号发生器</h1>
+          <span class="model">OUT: PA6 / TIM3_CH1 PWM</span>
+        </div>
+        <div class="generator-body">
+          <div class="display">
+            <div id="genMain" class="display-main">SINE 1.000 kHz</div>
+            <div class="display-sub">
+              <span id="genAmpDisplay">AMP 70%</span>
+              <span id="genOffsetDisplay">OFFS 50%</span>
+              <span id="genOutDisplay">OUT ON</span>
+            </div>
+          </div>
+
+          <div class="control-bank">
+            <div class="bank-title">波形</div>
+            <div class="segmented" id="waveButtons">
+              <button data-wave="SINE" class="active">SINE</button>
+              <button data-wave="SQUARE">SQUARE</button>
+              <button data-wave="TRIANGLE">TRI</button>
+              <button data-wave="SAW">SAW</button>
+            </div>
+          </div>
+
+          <div class="control-bank">
+            <div class="bank-title">输出参数</div>
+            <div class="knob-grid">
+              <div class="knob-control">
+                <div id="freqKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                <div class="knob-label">频率 (Hz)</div>
+                <input id="freqValue" class="knob-value editable-value" type="number" min="1" max="10000" step="1" value="1000" title="频率，单位 Hz">
+                <div class="field">
+                  <label for="freqInput">精确频率 Hz</label>
+                  <input id="freqInput" type="number" min="1" max="10000" step="1" value="1000">
+                </div>
+              </div>
+
+              <div class="knob-control">
+                <div id="ampKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                <div class="knob-label">幅度 (%)</div>
+                <input id="ampValue" class="knob-value editable-value" type="number" min="0" max="100" step="1" value="70" title="幅度，单位 %">
+              </div>
+
+              <div class="knob-control">
+                <div id="offsetKnob" class="knob" title="上下拖动或滚轮调节"></div>
+                <div class="knob-label">偏置 (%)</div>
+                <input id="offsetValue" class="knob-value editable-value" type="number" min="0" max="100" step="1" value="50" title="偏置，单位 %">
+              </div>
+            </div>
+          </div>
+
+          <div class="generator-actions">
+            <button id="outputBtn" class="btn active">输出 ON</button>
+            <button id="defaultBtn" class="btn">默认设置</button>
+          </div>
+
+          <div id="log" class="log-drawer" aria-label="通信日志"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      connected: false,
+      running: true,
+      busy: false,
+      transport: null,
+      wave: "SINE",
+      output: true,
+      freq: 1000,
+      amp: 70,
+      offset: 50,
+      timeDivMs: 10,
+      voltsDiv: 0.5,
+      verticalPos: 1.65,
+      triggerLevel: 1.65,
+      triggerMode: "AUTO",
+      samples: 512,
+      sampleRate: 5120,
+      data: [],
+      vrefMv: 3300,
+      captureTimer: null,
+      commandChain: Promise.resolve()
+    };
+
+    const els = {
+      statusDot: document.getElementById("statusDot"),
+      statusText: document.getElementById("statusText"),
+      connectSimBtn: document.getElementById("connectSimBtn"),
+      connectSerialBtn: document.getElementById("connectSerialBtn"),
+      disconnectBtn: document.getElementById("disconnectBtn"),
+      runBtn: document.getElementById("runBtn"),
+      singleBtn: document.getElementById("singleBtn"),
+      sampleCount: document.getElementById("sampleCount"),
+      scopeCanvas: document.getElementById("scopeCanvas"),
+      readTime: document.getElementById("readTime"),
+      readVolt: document.getElementById("readVolt"),
+      readTrig: document.getElementById("readTrig"),
+      readRate: document.getElementById("readRate"),
+      meterVpp: document.getElementById("meterVpp"),
+      meterAvg: document.getElementById("meterAvg"),
+      meterFreq: document.getElementById("meterFreq"),
+      genMain: document.getElementById("genMain"),
+      genAmpDisplay: document.getElementById("genAmpDisplay"),
+      genOffsetDisplay: document.getElementById("genOffsetDisplay"),
+      genOutDisplay: document.getElementById("genOutDisplay"),
+      waveButtons: document.getElementById("waveButtons"),
+      outputBtn: document.getElementById("outputBtn"),
+      defaultBtn: document.getElementById("defaultBtn"),
+      freqInput: document.getElementById("freqInput"),
+      log: document.getElementById("log")
+    };
+
+    class LineQueue {
+      constructor() {
+        this.lines = [];
+        this.waiters = [];
+      }
+
+      push(line) {
+        const clean = line.trim();
+        if (!clean) return;
+        if (this.waiters.length) {
+          const waiter = this.waiters.shift();
+          waiter.resolve(clean);
+        } else {
+          this.lines.push(clean);
+        }
+      }
+
+      read(timeoutMs = 2500) {
+        if (this.lines.length) {
+          return Promise.resolve(this.lines.shift());
+        }
+        return new Promise((resolve, reject) => {
+          const waiter = { resolve, reject, timer: null };
+          waiter.timer = setTimeout(() => {
+            this.waiters = this.waiters.filter(item => item !== waiter);
+            reject(new Error("读取超时"));
+          }, timeoutMs);
+          const originalResolve = resolve;
+          waiter.resolve = value => {
+            clearTimeout(waiter.timer);
+            originalResolve(value);
+          };
+          this.waiters.push(waiter);
+        });
+      }
+
+      clear() {
+        this.lines.length = 0;
+      }
+    }
+
+    class WebSocketTransport {
+      constructor(url) {
+        this.url = url;
+        this.queue = new LineQueue();
+        this.ws = null;
+      }
+
+      connect() {
+        return new Promise((resolve, reject) => {
+          const ws = new WebSocket(this.url);
+          this.ws = ws;
+          ws.addEventListener("open", () => resolve());
+          ws.addEventListener("error", () => reject(new Error("WebSocket 连接失败")));
+          ws.addEventListener("message", event => {
+            String(event.data).split(/\r?\n/).forEach(line => this.queue.push(line));
+          });
+          ws.addEventListener("close", () => {
+            if (state.transport === this) {
+              setStatus("已断开", "error");
+              state.connected = false;
+            }
+          });
+        });
+      }
+
+      writeLine(line) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          throw new Error("WebSocket 未连接");
+        }
+        this.ws.send(line);
+      }
+
+      readLine(timeoutMs) {
+        return this.queue.read(timeoutMs);
+      }
+
+      clearInput() {
+        this.queue.clear();
+      }
+
+      close() {
+        if (this.ws) this.ws.close();
+      }
+    }
+
+    class SerialTransport {
+      constructor(port) {
+        this.port = port;
+        this.queue = new LineQueue();
+        this.reader = null;
+        this.writer = null;
+        this.buffer = "";
+        this.closed = false;
+      }
+
+      async connect() {
+        await this.port.open({ baudRate: 115200 });
+        this.writer = this.port.writable.getWriter();
+        this.reader = this.port.readable.getReader();
+        this.readLoop();
+      }
+
+      async readLoop() {
+        const decoder = new TextDecoder();
+        try {
+          while (!this.closed) {
+            const { value, done } = await this.reader.read();
+            if (done) break;
+            this.buffer += decoder.decode(value, { stream: true });
+            const parts = this.buffer.split(/\r?\n/);
+            this.buffer = parts.pop() || "";
+            parts.forEach(line => this.queue.push(line));
+          }
+        } catch (error) {
+          logLine("串口读取停止: " + error.message);
+        }
+      }
+
+      async writeLine(line) {
+        if (!this.writer) throw new Error("串口未连接");
+        const data = new TextEncoder().encode(line + "\n");
+        await this.writer.write(data);
+      }
+
+      readLine(timeoutMs) {
+        return this.queue.read(timeoutMs);
+      }
+
+      async close() {
+        this.closed = true;
+        try {
+          if (this.reader) {
+            await this.reader.cancel();
+            this.reader.releaseLock();
+          }
+        } catch (_) {}
+        try {
+          if (this.writer) this.writer.releaseLock();
+        } catch (_) {}
+        try {
+          await this.port.close();
+        } catch (_) {}
+      }
+    }
+
+    function logLine(text) {
+      const item = document.createElement("div");
+      item.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      els.log.appendChild(item);
+      while (els.log.children.length > 80) els.log.removeChild(els.log.firstChild);
+      els.log.scrollTop = els.log.scrollHeight;
+    }
+
+    function setStatus(text, kind = "") {
+      els.statusText.textContent = text;
+      els.statusDot.className = "status-dot" + (kind ? ` ${kind}` : "");
+    }
+
+    async function drainReadyLines() {
+      if (!state.transport) return;
+      while (true) {
+        try {
+          const line = await state.transport.readLine(120);
+          logLine("< " + line);
+        } catch (_) {
+          break;
+        }
+      }
+    }
+
+    async function sendCommand(line, timeoutMs = 2500) {
+      if (!state.transport || !state.connected) throw new Error("设备未连接");
+      return state.commandChain = state.commandChain.then(async () => {
+        logLine("> " + line);
+        await state.transport.writeLine(line);
+        while (true) {
+          const response = await state.transport.readLine(timeoutMs);
+          logLine("< " + response);
+          if (response.startsWith("READY") || response.startsWith("PINS")) continue;
+          return response;
+        }
+      });
+    }
+
+    function captureTimeoutMs(samples, rate) {
+      const captureMs = (Math.max(1, samples) / Math.max(1, rate)) * 1000;
+      return Math.ceil(clamp(captureMs + 6000, 8000, 65000));
+    }
+
+    function runLoopDelayMs() {
+      const captureMs = (Math.max(1, state.samples) / Math.max(1, state.sampleRate)) * 1000;
+      return Math.ceil(clamp(captureMs + 350, 320, 65000));
+    }
+
+    function setRunState(running) {
+      state.running = running;
+      els.runBtn.classList.toggle("active", state.running);
+      els.runBtn.textContent = state.running ? "运行" : "停止";
+      if (state.running) startRunLoop();
+      else stopRunLoop();
+    }
+
+    async function capture(samples, rate) {
+      if (!state.transport || !state.connected) throw new Error("设备未连接");
+      return state.commandChain = state.commandChain.then(async () => {
+        const cmd = `CAP ${samples} ${rate}`;
+        const timeoutMs = captureTimeoutMs(samples, rate);
+        logLine("> " + cmd);
+        await state.transport.writeLine(cmd);
+        let header;
+        while (true) {
+          header = await state.transport.readLine(timeoutMs);
+          logLine("< " + header);
+          if (header.startsWith("READY") || header.startsWith("PINS")) continue;
+          break;
+        }
+        const parts = header.split(/\s+/);
+        if (parts[0] !== "DATA") throw new Error(header);
+        const expected = Number(parts[1]);
+        const sampleRate = Number(parts[2]);
+        const vrefMv = Number(parts[3]);
+        const values = [];
+        let overflow = 0;
+        while (true) {
+          const line = await state.transport.readLine(timeoutMs);
+          logLine("< " + line);
+          if (line === "END") break;
+          line.split(",").forEach(item => {
+            const value = Number(item.trim());
+            if (!Number.isFinite(value)) return;
+            if (values.length < expected) {
+              values.push(value);
+            } else {
+              overflow += 1;
+            }
+          });
+        }
+        if (values.length < expected) {
+          throw new Error(`采样点数不匹配: ${values.length}/${expected}`);
+        }
+        if (overflow > 0) {
+          logLine(`提示: 已丢弃 ${overflow} 个多余采样点`);
+        }
+        return { values, sampleRate, vrefMv };
+      });
+    }
+
+    function formatFreq(value) {
+      if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 1 : 3)} kHz`;
+      return `${Math.round(value)} Hz`;
+    }
+
+    function formatMs(value) {
+      if (value >= 1000) return `${(value / 1000).toFixed(2)} s`;
+      return `${value.toFixed(value < 10 ? 1 : 0)} ms`;
+    }
+
+    function formatV(value) {
+      return `${value.toFixed(2)} V`;
+    }
+
+    function updateGeneratorDisplay() {
+      els.genMain.textContent = `${state.wave} ${formatFreq(state.freq)}`;
+      els.genAmpDisplay.textContent = `AMP ${Math.round(state.amp)}%`;
+      els.genOffsetDisplay.textContent = `OFFS ${Math.round(state.offset)}%`;
+      els.genOutDisplay.textContent = state.output ? "OUT ON" : "OUT OFF";
+      els.outputBtn.textContent = state.output ? "输出 ON" : "输出 OFF";
+      els.outputBtn.classList.toggle("active", state.output);
+      els.freqInput.value = Math.round(state.freq);
+    }
+
+    function updateScopeReadout() {
+      state.samples = clamp(Number(els.sampleCount.value) || 512, 64, 512);
+      const totalSec = (state.timeDivMs / 1000) * 10;
+      state.sampleRate = clamp(Math.round(state.samples / totalSec), 10, 20000);
+      els.readTime.textContent = `Time ${formatMs(state.timeDivMs)}/div`;
+      els.readVolt.textContent = `Volt ${formatV(state.voltsDiv)}/div`;
+      els.readTrig.textContent = `Trig ${formatV(state.triggerLevel)}`;
+      els.readRate.textContent = `Rate ${state.sampleRate} Sa/s`;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function makeKnob(config) {
+      const knob = document.getElementById(config.id);
+      const valueEl = document.getElementById(config.valueId);
+      let dragging = false;
+      let startY = 0;
+      let startValue = config.get();
+
+      function normFromValue(value) {
+        if (config.log) {
+          const min = Math.log(config.min);
+          const max = Math.log(config.max);
+          return (Math.log(value) - min) / (max - min);
+        }
+        return (value - config.min) / (config.max - config.min);
+      }
+
+      function valueFromNorm(norm) {
+        const n = clamp(norm, 0, 1);
+        if (config.log) {
+          const min = Math.log(config.min);
+          const max = Math.log(config.max);
+          return Math.exp(min + n * (max - min));
+        }
+        return config.min + n * (config.max - config.min);
+      }
+
+      function snap(value) {
+        const step = config.step || 1;
+        return clamp(Math.round(value / step) * step, config.min, config.max);
+      }
+
+      function render() {
+        const value = config.get();
+        const norm = normFromValue(value);
+        const angle = -135 + clamp(norm, 0, 1) * 270;
+        knob.style.setProperty("--angle", `${angle}deg`);
+        if (valueEl instanceof HTMLInputElement) {
+          valueEl.value = config.inputFormat ? config.inputFormat(value) : String(value);
+        } else {
+          valueEl.textContent = config.format(value);
+        }
+      }
+
+      function setValue(value) {
+        config.set(snap(value));
+        render();
+        config.onChange?.();
+      }
+
+      knob.addEventListener("pointerdown", event => {
+        dragging = true;
+        startY = event.clientY;
+        startValue = config.get();
+        knob.setPointerCapture(event.pointerId);
+      });
+
+      knob.addEventListener("pointermove", event => {
+        if (!dragging) return;
+        const delta = (startY - event.clientY) / 160;
+        const nextNorm = normFromValue(startValue) + delta;
+        setValue(valueFromNorm(nextNorm));
+      });
+
+      knob.addEventListener("pointerup", event => {
+        dragging = false;
+        knob.releasePointerCapture(event.pointerId);
+      });
+
+      knob.addEventListener("wheel", event => {
+        event.preventDefault();
+        const direction = event.deltaY < 0 ? 1 : -1;
+        const step = config.wheelStep || config.step || 1;
+        setValue(config.get() + direction * step);
+      }, { passive: false });
+
+      if (valueEl instanceof HTMLInputElement) {
+        valueEl.addEventListener("change", () => {
+          const value = Number(valueEl.value);
+          if (Number.isFinite(value)) {
+            setValue(value);
+          } else {
+            render();
+          }
+        });
+
+        valueEl.addEventListener("keydown", event => {
+          if (event.key === "Enter") valueEl.blur();
+        });
+      }
+
+      render();
+      return { render, setValue };
+    }
+
+    const knobs = {};
+
+    function initKnobs() {
+      knobs.freq = makeKnob({
+        id: "freqKnob",
+        valueId: "freqValue",
+        min: 1,
+        max: 10000,
+        step: 1,
+        wheelStep: 10,
+        log: true,
+        get: () => state.freq,
+        set: value => { state.freq = value; },
+        format: formatFreq,
+        inputFormat: value => String(Math.round(value)),
+        onChange: () => {
+          updateGeneratorDisplay();
+          scheduleGeneratorUpdate();
+        }
+      });
+
+      knobs.amp = makeKnob({
+        id: "ampKnob",
+        valueId: "ampValue",
+        min: 0,
+        max: 100,
+        step: 1,
+        wheelStep: 2,
+        get: () => state.amp,
+        set: value => { state.amp = value; },
+        format: value => `${Math.round(value)}%`,
+        inputFormat: value => String(Math.round(value)),
+        onChange: () => {
+          updateGeneratorDisplay();
+          scheduleGeneratorUpdate();
+        }
+      });
+
+      knobs.offset = makeKnob({
+        id: "offsetKnob",
+        valueId: "offsetValue",
+        min: 0,
+        max: 100,
+        step: 1,
+        wheelStep: 2,
+        get: () => state.offset,
+        set: value => { state.offset = value; },
+        format: value => `${Math.round(value)}%`,
+        inputFormat: value => String(Math.round(value)),
+        onChange: () => {
+          updateGeneratorDisplay();
+          scheduleGeneratorUpdate();
+        }
+      });
+
+      knobs.time = makeKnob({
+        id: "timeKnob",
+        valueId: "timeValue",
+        min: 1,
+        max: 500,
+        step: 1,
+        wheelStep: 1,
+        log: true,
+        get: () => state.timeDivMs,
+        set: value => { state.timeDivMs = value; },
+        format: formatMs,
+        inputFormat: value => String(Number(value.toFixed(2))),
+        onChange: () => {
+          updateScopeReadout();
+          if (state.running) startRunLoop();
+          drawScope();
+        }
+      });
+
+      knobs.volt = makeKnob({
+        id: "voltKnob",
+        valueId: "voltValue",
+        min: 0.1,
+        max: 2,
+        step: 0.05,
+        wheelStep: 0.05,
+        log: true,
+        get: () => state.voltsDiv,
+        set: value => { state.voltsDiv = value; },
+        format: formatV,
+        inputFormat: value => value.toFixed(2),
+        onChange: () => {
+          updateScopeReadout();
+          drawScope();
+        }
+      });
+
+      knobs.pos = makeKnob({
+        id: "posKnob",
+        valueId: "posValue",
+        min: 0,
+        max: 3.3,
+        step: 0.05,
+        wheelStep: 0.05,
+        get: () => state.verticalPos,
+        set: value => { state.verticalPos = value; },
+        format: formatV,
+        inputFormat: value => value.toFixed(2),
+        onChange: drawScope
+      });
+
+      knobs.trig = makeKnob({
+        id: "trigKnob",
+        valueId: "trigValue",
+        min: 0,
+        max: 3.3,
+        step: 0.05,
+        wheelStep: 0.05,
+        get: () => state.triggerLevel,
+        set: value => { state.triggerLevel = value; },
+        format: formatV,
+        inputFormat: value => value.toFixed(2),
+        onChange: () => {
+          updateScopeReadout();
+          drawScope();
+        }
+      });
+    }
+
+    let genDebounce = null;
+
+    function scheduleGeneratorUpdate() {
+      clearTimeout(genDebounce);
+      genDebounce = setTimeout(applyGenerator, 160);
+    }
+
+    async function applyGenerator() {
+      if (!state.connected) return;
+      try {
+        setStatus("发送输出设置", "busy");
+        if (state.output) {
+          const wave = state.wave;
+          const freq = Math.round(state.freq);
+          const amp = Math.round(state.amp);
+          const offset = Math.round(state.offset);
+          const response = await sendCommand(`GEN ${wave} ${freq} ${amp} ${offset}`);
+          if (!response.startsWith("OK")) throw new Error(response);
+        } else {
+          const response = await sendCommand("GEN OFF");
+          if (!response.startsWith("OK")) throw new Error(response);
+        }
+        setStatus("已连接", "online");
+      } catch (error) {
+        setStatus("输出设置失败", "error");
+        logLine("错误: " + error.message);
+      }
+    }
+
+    async function captureOnce() {
+      if (!state.connected) return;
+      try {
+        state.busy = true;
+        setStatus("采集中", "busy");
+        updateScopeReadout();
+        const result = await capture(state.samples, state.sampleRate);
+        state.data = result.values;
+        state.sampleRate = result.sampleRate;
+        state.vrefMv = result.vrefMv;
+        drawScope();
+        setStatus("已连接", "online");
+      } catch (error) {
+        setStatus("采集失败", "error");
+        logLine("错误: " + error.message);
+        if (state.running) {
+          setRunState(false);
+          logLine("已自动停止运行，避免重复超时");
+        }
+      } finally {
+        state.busy = false;
+      }
+    }
+
+    function startRunLoop() {
+      clearInterval(state.captureTimer);
+      state.captureTimer = setInterval(() => {
+        if (state.running && state.connected && !state.busy) captureOnce();
+      }, runLoopDelayMs());
+    }
+
+    function stopRunLoop() {
+      clearInterval(state.captureTimer);
+      state.captureTimer = null;
+    }
+
+    function drawScope() {
+      const canvas = els.scopeCanvas;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(rect.width * dpr));
+      const height = Math.max(1, Math.floor(rect.height * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#06100b";
+      ctx.fillRect(0, 0, w, h);
+
+      const cols = 10;
+      const rows = 8;
+      const gx = w / cols;
+      const gy = h / rows;
+
+      ctx.strokeStyle = "rgba(73, 242, 155, 0.16)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= cols; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * gx, 0);
+        ctx.lineTo(x * gx, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= rows; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * gy);
+        ctx.lineTo(w, y * gy);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = "rgba(73, 242, 155, 0.34)";
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.moveTo(w / 2, 0);
+      ctx.lineTo(w / 2, h);
+      ctx.stroke();
+
+      const trigY = h / 2 - ((state.triggerLevel - state.verticalPos) / state.voltsDiv) * gy;
+      ctx.strokeStyle = "rgba(242, 184, 75, 0.75)";
+      ctx.setLineDash([7, 7]);
+      ctx.beginPath();
+      ctx.moveTo(0, trigY);
+      ctx.lineTo(w, trigY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (state.data.length > 1) {
+        ctx.strokeStyle = "#49f29b";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = "rgba(73, 242, 155, 0.85)";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        state.data.forEach((sample, index) => {
+          const voltage = sample * state.vrefMv / 4095 / 1000;
+          const x = index * w / (state.data.length - 1);
+          const y = h / 2 - ((voltage - state.verticalPos) / state.voltsDiv) * gy;
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = "rgba(191, 255, 217, 0.62)";
+        ctx.font = "16px Consolas, monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("NO SIGNAL", w / 2, h / 2 - 18);
+      }
+
+      ctx.restore();
+      updateMeters();
+    }
+
+    function updateMeters() {
+      if (!state.data.length) {
+        els.meterVpp.textContent = "--";
+        els.meterAvg.textContent = "--";
+        els.meterFreq.textContent = "--";
+        return;
+      }
+      const volts = state.data.map(value => value * state.vrefMv / 4095 / 1000);
+      const min = Math.min(...volts);
+      const max = Math.max(...volts);
+      const avg = volts.reduce((a, b) => a + b, 0) / volts.length;
+      els.meterVpp.textContent = `${(max - min).toFixed(2)} V`;
+      els.meterAvg.textContent = `${avg.toFixed(2)} V`;
+      els.meterFreq.textContent = estimateFreq(volts, avg);
+    }
+
+    function estimateFreq(volts, threshold) {
+      const crossings = [];
+      for (let i = 1; i < volts.length; i++) {
+        if (volts[i - 1] < threshold && volts[i] >= threshold) {
+          crossings.push(i);
+        }
+      }
+      if (crossings.length < 2) return "--";
+      const periods = [];
+      for (let i = 1; i < crossings.length; i++) {
+        periods.push(crossings[i] - crossings[i - 1]);
+      }
+      const avgPeriod = periods.reduce((a, b) => a + b, 0) / periods.length;
+      const hz = state.sampleRate / avgPeriod;
+      return formatFreq(hz);
+    }
+
+    async function connectSimulator() {
+      await disconnect(false);
+      const transport = new WebSocketTransport("ws://127.0.0.1:7897");
+      setStatus("连接模拟器", "busy");
+      await transport.connect();
+      state.transport = transport;
+      state.connected = true;
+      await drainReadyLines();
+      setStatus("已连接模拟器", "online");
+      logLine("模拟器已连接");
+      await sendCommand("PING");
+      await applyGenerator();
+      if (state.running) startRunLoop();
+    }
+
+    async function connectSerial() {
+      if (!("serial" in navigator)) {
+        throw new Error("当前浏览器不支持 Web Serial，请使用 Chrome 或 Edge");
+      }
+      await disconnect(false);
+      const port = await navigator.serial.requestPort();
+      const transport = new SerialTransport(port);
+      setStatus("连接 DAPmini 串口", "busy");
+      await transport.connect();
+      state.transport = transport;
+      state.connected = true;
+      await drainReadyLines();
+      setStatus("已连接 DAPmini 串口", "online");
+      logLine("DAPmini 串口已连接");
+      await sendCommand("PING");
+      await applyGenerator();
+      if (state.running) startRunLoop();
+    }
+
+    async function disconnect(update = true) {
+      stopRunLoop();
+      if (state.transport) {
+        try {
+          await state.transport.close();
+        } catch (_) {}
+      }
+      state.transport = null;
+      state.connected = false;
+      if (update) setStatus("未连接", "");
+    }
+
+    function bindEvents() {
+      els.connectSimBtn.addEventListener("click", () => connectSimulator().catch(error => {
+        setStatus("模拟器连接失败", "error");
+        logLine("错误: " + error.message);
+      }));
+
+      els.connectSerialBtn.addEventListener("click", () => connectSerial().catch(error => {
+        setStatus("DAPmini 串口连接失败", "error");
+        logLine("错误: " + error.message);
+      }));
+
+      els.disconnectBtn.addEventListener("click", () => disconnect());
+
+      els.runBtn.addEventListener("click", () => {
+        setRunState(!state.running);
+      });
+
+      els.singleBtn.addEventListener("click", captureOnce);
+
+      els.sampleCount.addEventListener("change", () => {
+        updateScopeReadout();
+        if (state.running) startRunLoop();
+        if (!state.running) captureOnce();
+      });
+
+      els.waveButtons.addEventListener("click", event => {
+        const button = event.target.closest("button[data-wave]");
+        if (!button) return;
+        state.wave = button.dataset.wave;
+        els.waveButtons.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
+        updateGeneratorDisplay();
+        scheduleGeneratorUpdate();
+      });
+
+      document.getElementById("triggerMode").addEventListener("click", event => {
+        const button = event.target.closest("button[data-value]");
+        if (!button) return;
+        state.triggerMode = button.dataset.value;
+        document.querySelectorAll("#triggerMode button").forEach(item => item.classList.toggle("active", item === button));
+      });
+
+      els.outputBtn.addEventListener("click", () => {
+        state.output = !state.output;
+        updateGeneratorDisplay();
+        scheduleGeneratorUpdate();
+      });
+
+      els.defaultBtn.addEventListener("click", () => {
+        state.wave = "SINE";
+        state.output = true;
+        state.freq = 1000;
+        state.amp = 70;
+        state.offset = 50;
+        state.timeDivMs = 10;
+        state.voltsDiv = 0.5;
+        state.verticalPos = 1.65;
+        state.triggerLevel = 1.65;
+        els.waveButtons.querySelectorAll("button").forEach(item => {
+          item.classList.toggle("active", item.dataset.wave === state.wave);
+        });
+        Object.values(knobs).forEach(knob => knob.render());
+        updateGeneratorDisplay();
+        updateScopeReadout();
+        drawScope();
+        scheduleGeneratorUpdate();
+      });
+
+      els.freqInput.addEventListener("change", () => {
+        state.freq = clamp(Number(els.freqInput.value) || 1, 1, 10000);
+        knobs.freq.render();
+        els.freqInput.value = Math.round(state.freq);
+        updateGeneratorDisplay();
+        scheduleGeneratorUpdate();
+      });
+
+      window.addEventListener("resize", drawScope);
+    }
+
+    initKnobs();
+    bindEvents();
+    updateGeneratorDisplay();
+    updateScopeReadout();
+    drawScope();
+  </script>
+</body>
+</html>

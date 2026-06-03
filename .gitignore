@@ -1,0 +1,47 @@
+# Build outputs
+Objects/
+Listings/
+*.o
+*.d
+*.crf
+*.lst
+*.map
+*.lnp
+*.sct
+*.axf
+*.hex
+*.htm
+*.build_log.htm
+*.dep
+*.iex
+keil_build.log
+
+# Local IDE/debug state
+*.uvguix.*
+*.uvgui.*
+DebugConfig/
+
+# Unused vendor library dump kept locally, not required by sig_oci.uvprojx
+Library/
+Start/startup_stm32f10x_cl.s
+Start/startup_stm32f10x_hd.s
+Start/startup_stm32f10x_hd_vl.s
+Start/startup_stm32f10x_ld.s
+Start/startup_stm32f10x_ld_vl.s
+Start/startup_stm32f10x_md_vl.s
+Start/startup_stm32f10x_xl.s
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local backups
+backup_before_revert_*/
+*.bak
+*.orig
+*.old
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.tmp
