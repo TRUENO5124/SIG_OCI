@@ -374,13 +374,17 @@ Build Time Elapsed:  00:00:00
 
 ### 9.5 Keil 编译成功截图
 
-![Keil 编译成功截图](docs/images/keil-build-success.svg)
+![Keil 编译成功截图](docs/images/keil-build-success.png)
 
-### 9.6 硬件连接图
+### 9.6 Keil 烧录成功截图
+
+![Keil 烧录成功截图](docs/images/keil-flash-success.png)
+
+### 9.7 硬件连接图
 
 ![硬件连接图](docs/images/hardware-connection-diagram.svg)
 
-### 9.7 真实硬件连接照片
+### 9.8 真实硬件连接照片
 
 ![真实硬件连接照片](docs/images/hardware-real-connection.jpg)
 
