@@ -574,7 +574,7 @@
               <div class="knob-control">
                 <div id="timeKnob" class="knob" title="上下拖动或滚轮调节"></div>
                 <div class="knob-label">Time / Div (ms)</div>
-                <input id="timeValue" class="knob-value editable-value" type="number" min="1" max="500" step="1" value="10" title="Time/Div，单位 ms">
+                <input id="timeValue" class="knob-value editable-value" type="number" min="1" max="500" step="1" value="1" title="Time/Div，单位 ms">
               </div>
             </div>
 
@@ -690,13 +690,13 @@
       freq: 1000,
       amp: 70,
       offset: 50,
-      timeDivMs: 10,
+      timeDivMs: 1,
       voltsDiv: 0.5,
       verticalPos: 1.65,
       triggerLevel: 1.65,
       triggerMode: "AUTO",
       samples: 512,
-      sampleRate: 5120,
+      sampleRate: 51200,
       data: [],
       vrefMv: 3300,
       captureTimer: null,
@@ -902,9 +902,14 @@
       }
     }
 
+    function enqueueCommand(task) {
+      state.commandChain = state.commandChain.catch(() => {}).then(task);
+      return state.commandChain;
+    }
+
     async function sendCommand(line, timeoutMs = 2500) {
       if (!state.transport || !state.connected) throw new Error("设备未连接");
-      return state.commandChain = state.commandChain.then(async () => {
+      return enqueueCommand(async () => {
         logLine("> " + line);
         await state.transport.writeLine(line);
         while (true) {
@@ -936,7 +941,7 @@
 
     async function capture(samples, rate) {
       if (!state.transport || !state.connected) throw new Error("设备未连接");
-      return state.commandChain = state.commandChain.then(async () => {
+      return enqueueCommand(async () => {
         const cmd = `CAP ${samples} ${rate}`;
         const timeoutMs = captureTimeoutMs(samples, rate);
         logLine("> " + cmd);
@@ -993,6 +998,74 @@
       return `${value.toFixed(2)} V`;
     }
 
+    function rawVolts() {
+      return state.data.map(value => value * state.vrefMv / 4095 / 1000);
+    }
+
+    function looksLikePwm(volts) {
+      if (volts.length < 32) return false;
+      const rail = state.vrefMv / 1000;
+      const lowLimit = rail * 0.08;
+      const highLimit = rail * 0.92;
+      let railHits = 0;
+      for (const value of volts) {
+        if (value <= lowLimit || value >= highLimit) railHits += 1;
+      }
+      return railHits / volts.length > 0.72;
+    }
+
+    function movingAverageVolts(volts) {
+      if (volts.length < 3) return volts;
+      const sampleRate = Math.max(1, state.sampleRate);
+      const signalHz = Math.max(1, Number(state.freq) || 1);
+      const periodSamples = sampleRate / signalHz;
+      const window = clamp(Math.round(periodSamples / 12), 5, 41);
+      const radius = Math.floor(window / 2);
+      const sums = [0];
+      for (const value of volts) {
+        sums.push(sums[sums.length - 1] + value);
+      }
+      const averaged = new Array(volts.length);
+      for (let i = 0; i < volts.length; i++) {
+        const start = Math.max(0, i - radius);
+        const end = Math.min(volts.length, i + radius + 1);
+        averaged[i] = (sums[end] - sums[start]) / (end - start);
+      }
+      return averaged;
+    }
+
+    function smoothVolts(volts) {
+      if (volts.length < 3) return volts;
+      const sampleRate = Math.max(1, state.sampleRate);
+      const signalHz = Math.max(1, Number(state.freq) || 1);
+      const harmonicFactor = state.wave === "SINE" ? 2.0 : 5.0;
+      const cutoffHz = clamp(signalHz * harmonicFactor, 20, sampleRate * 0.35);
+      const dt = 1 / sampleRate;
+      const rc = 1 / (2 * Math.PI * cutoffHz);
+      const alpha = dt / (rc + dt);
+      const forward = [];
+      let y = volts[0];
+      for (const value of volts) {
+        y += alpha * (value - y);
+        forward.push(y);
+      }
+      const filtered = new Array(volts.length);
+      y = forward[forward.length - 1];
+      for (let i = forward.length - 1; i >= 0; i--) {
+        y += alpha * (forward[i] - y);
+        filtered[i] = y;
+      }
+      return filtered;
+    }
+
+    function displayVolts() {
+      const volts = rawVolts();
+      if (!state.output) return volts;
+      if (state.wave === "SQUARE") return volts;
+      if (!looksLikePwm(volts)) return volts;
+      return smoothVolts(movingAverageVolts(volts));
+    }
+
     function updateGeneratorDisplay() {
       els.genMain.textContent = `${state.wave} ${formatFreq(state.freq)}`;
       els.genAmpDisplay.textContent = `AMP ${Math.round(state.amp)}%`;
@@ -1006,7 +1079,7 @@
     function updateScopeReadout() {
       state.samples = clamp(Number(els.sampleCount.value) || 512, 64, 512);
       const totalSec = (state.timeDivMs / 1000) * 10;
-      state.sampleRate = clamp(Math.round(state.samples / totalSec), 10, 20000);
+      state.sampleRate = clamp(Math.round(state.samples / totalSec), 10, 51200);
       els.readTime.textContent = `Time ${formatMs(state.timeDivMs)}/div`;
       els.readVolt.textContent = `Volt ${formatV(state.voltsDiv)}/div`;
       els.readTrig.textContent = `Trig ${formatV(state.triggerLevel)}`;
@@ -1239,7 +1312,31 @@
 
     function scheduleGeneratorUpdate() {
       clearTimeout(genDebounce);
-      genDebounce = setTimeout(applyGenerator, 160);
+      genDebounce = setTimeout(() => {
+        reconfigureGenerator().catch(error => {
+          setStatus("输出设置失败", "error");
+          logLine("错误: " + error.message);
+        });
+      }, 160);
+    }
+
+    async function reconfigureGenerator() {
+      const wasRunning = state.running;
+      if (wasRunning) stopRunLoop();
+      state.busy = true;
+      state.data = [];
+      drawScope();
+      try {
+        await applyGenerator();
+        if (state.connected && wasRunning) {
+          state.busy = false;
+          await captureOnce();
+          state.busy = true;
+          startRunLoop();
+        }
+      } finally {
+        state.busy = false;
+      }
     }
 
     async function applyGenerator() {
@@ -1261,11 +1358,12 @@
       } catch (error) {
         setStatus("输出设置失败", "error");
         logLine("错误: " + error.message);
+        throw error;
       }
     }
 
     async function captureOnce() {
-      if (!state.connected) return;
+      if (!state.connected || state.busy) return;
       try {
         state.busy = true;
         setStatus("采集中", "busy");
@@ -1279,6 +1377,7 @@
       } catch (error) {
         setStatus("采集失败", "error");
         logLine("错误: " + error.message);
+        await drainReadyLines().catch(() => {});
         if (state.running) {
           setRunState(false);
           logLine("已自动停止运行，避免重复超时");
@@ -1289,14 +1388,20 @@
     }
 
     function startRunLoop() {
-      clearInterval(state.captureTimer);
-      state.captureTimer = setInterval(() => {
-        if (state.running && state.connected && !state.busy) captureOnce();
+      stopRunLoop();
+      state.captureTimer = setTimeout(async () => {
+        state.captureTimer = null;
+        if (state.running && state.connected && !state.busy) {
+          await captureOnce();
+        }
+        if (state.running && state.connected && !state.busy) {
+          startRunLoop();
+        }
       }, runLoopDelayMs());
     }
 
     function stopRunLoop() {
-      clearInterval(state.captureTimer);
+      clearTimeout(state.captureTimer);
       state.captureTimer = null;
     }
 
@@ -1357,14 +1462,14 @@
       ctx.setLineDash([]);
 
       if (state.data.length > 1) {
+        const volts = displayVolts();
         ctx.strokeStyle = "#49f29b";
         ctx.lineWidth = 2;
         ctx.shadowColor = "rgba(73, 242, 155, 0.85)";
         ctx.shadowBlur = 8;
         ctx.beginPath();
-        state.data.forEach((sample, index) => {
-          const voltage = sample * state.vrefMv / 4095 / 1000;
-          const x = index * w / (state.data.length - 1);
+        volts.forEach((voltage, index) => {
+          const x = index * w / (volts.length - 1);
           const y = h / 2 - ((voltage - state.verticalPos) / state.voltsDiv) * gy;
           if (index === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
@@ -1389,30 +1494,85 @@
         els.meterFreq.textContent = "--";
         return;
       }
-      const volts = state.data.map(value => value * state.vrefMv / 4095 / 1000);
+      const volts = displayVolts();
       const min = Math.min(...volts);
       const max = Math.max(...volts);
       const avg = volts.reduce((a, b) => a + b, 0) / volts.length;
       els.meterVpp.textContent = `${(max - min).toFixed(2)} V`;
       els.meterAvg.textContent = `${avg.toFixed(2)} V`;
-      els.meterFreq.textContent = estimateFreq(volts, avg);
+      els.meterFreq.textContent = state.output ? formatFreq(state.freq) : estimateFreq(volts, avg);
     }
 
     function estimateFreq(volts, threshold) {
+      const min = Math.min(...volts);
+      const max = Math.max(...volts);
+      const span = max - min;
+      if (span < 0.05) return "--";
+      const center = (min + max) / 2;
       const crossings = [];
       for (let i = 1; i < volts.length; i++) {
-        if (volts[i - 1] < threshold && volts[i] >= threshold) {
-          crossings.push(i);
+        const prev = volts[i - 1] - center;
+        const curr = volts[i] - center;
+        if (prev === 0 || curr === 0 || (prev < 0 && curr > 0) || (prev > 0 && curr < 0)) {
+          const denom = Math.abs(prev) + Math.abs(curr);
+          const frac = denom > 0 ? Math.abs(prev) / denom : 0;
+          crossings.push({
+            index: (i - 1) + frac,
+            dir: curr > prev ? 1 : -1
+          });
         }
       }
       if (crossings.length < 2) return "--";
       const periods = [];
+      const halfPeriods = [];
       for (let i = 1; i < crossings.length; i++) {
-        periods.push(crossings[i] - crossings[i - 1]);
+        const delta = crossings[i].index - crossings[i - 1].index;
+        if (delta <= 0) continue;
+        if (crossings[i].dir === crossings[i - 1].dir) {
+          periods.push(delta);
+        } else {
+          halfPeriods.push(delta);
+        }
       }
-      const avgPeriod = periods.reduce((a, b) => a + b, 0) / periods.length;
+      const periodList = periods.length ? periods : halfPeriods.map(value => value * 2);
+      if (!periodList.length) {
+        const spectralHz = estimateFreqBySpectrum(volts, min, max);
+        return Number.isFinite(spectralHz) ? formatFreq(spectralHz) : "--";
+      }
+      const avgPeriod = periodList.reduce((a, b) => a + b, 0) / periodList.length;
       const hz = state.sampleRate / avgPeriod;
       return formatFreq(hz);
+    }
+
+    function estimateFreqBySpectrum(volts, min, max) {
+      const n = volts.length;
+      if (n < 16) return Number.NaN;
+      const avg = volts.reduce((a, b) => a + b, 0) / n;
+      const binHz = state.sampleRate / n;
+      const minBin = Math.max(1, Math.floor(1 / binHz));
+      const maxBin = Math.min(Math.floor(n / 2) - 1, Math.ceil(10000 / binHz));
+      let bestBin = 0;
+      let bestMag = 0;
+
+      for (let k = minBin; k <= maxBin; k++) {
+        let re = 0;
+        let im = 0;
+        for (let i = 0; i < n; i++) {
+          const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
+          const value = (volts[i] - avg) * window;
+          const angle = (2 * Math.PI * k * i) / n;
+          re += value * Math.cos(angle);
+          im -= value * Math.sin(angle);
+        }
+        const mag = re * re + im * im;
+        if (mag > bestMag) {
+          bestMag = mag;
+          bestBin = k;
+        }
+      }
+
+      if (bestBin <= 0 || bestMag <= 0) return Number.NaN;
+      return bestBin * binHz;
     }
 
     async function connectSimulator() {
@@ -1514,7 +1674,7 @@
         state.freq = 1000;
         state.amp = 70;
         state.offset = 50;
-        state.timeDivMs = 10;
+        state.timeDivMs = 1;
         state.voltsDiv = 0.5;
         state.verticalPos = 1.65;
         state.triggerLevel = 1.65;

@@ -24,6 +24,7 @@ from dataclasses import dataclass
 HOST = "127.0.0.1"
 PORT = 7897
 VREF_MV = 3300
+CAP_MAX_RATE_HZ = 51200
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
@@ -110,7 +111,7 @@ class ProtocolSession:
             self.send_line(
                 "INFO MCU=STM32F103C8T6_SIM UART=PORT_7897 "
                 "GEN=PA6_TIM3CH1_PWM SCOPE=PA0_ADC1IN0 GEN_HZ=1-10000 "
-                "CAP_MAX=512 PORT=7897_SIM"
+                f"CAP_MAX=512 CAP_MAX_RATE={CAP_MAX_RATE_HZ} PORT=7897_SIM"
             )
         elif cmd == "GEN":
             self.handle_gen(parts)
@@ -163,7 +164,7 @@ class ProtocolSession:
             self.send_line("ERR CAP_RANGE")
             return
 
-        if not (1 <= samples <= 512 and 10 <= rate_hz <= 20000):
+        if not (1 <= samples <= 512 and 10 <= rate_hz <= CAP_MAX_RATE_HZ):
             self.send_line("ERR CAP_RANGE")
             return
 

@@ -11,7 +11,9 @@
 
 #define CAP_MAX_SAMPLES       512U
 #define CAP_MIN_RATE_HZ       10U
-#define CAP_MAX_RATE_HZ       20000U
+#define CAP_MAX_RATE_HZ       51200U
+#define CAP_ADC_READ_US       6U
+#define CAP_FILTER_MAX_READS  16U
 #define VREF_MV               3300U
 
 #define TIM_CCMR1_OC1_PWM1    (TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2)
@@ -61,6 +63,8 @@ static void uart_puts(const char *s);
 static void uart_put_u32(uint32_t value);
 static void uart_put_line(const char *s);
 static uint16_t adc1_read(void);
+static uint32_t capture_filter_count(uint32_t period_us);
+static uint16_t adc1_read_filtered(uint32_t count);
 static void delay_us(uint32_t us);
 static void poll_uart_line(void);
 static void handle_line(char *line);
@@ -73,7 +77,10 @@ static uint8_t token_eq(const char *a, const char *b);
 static uint8_t parse_u32(const char *s, uint32_t *out);
 static WaveType parse_wave(const char *s);
 static void generator_set(WaveType wave, uint32_t freq_hz, uint32_t amp, uint32_t offset);
+static uint32_t generator_raw_from_phase(WaveType wave, uint32_t phase);
+static uint16_t generator_duty_from_raw(uint32_t raw, uint16_t amp, uint16_t offset);
 static uint16_t generator_next_duty(void);
+static uint16_t generator_scope_sample(uint32_t phase, WaveType wave, uint16_t amp, uint16_t offset);
 void TIM2_IRQHandler(void);
 
 int main(void)
@@ -244,6 +251,35 @@ static uint16_t adc1_read(void)
     return (uint16_t)(ADC1->DR & 0x0FFFU);
 }
 
+static uint32_t capture_filter_count(uint32_t period_us)
+{
+    uint32_t count = period_us / CAP_ADC_READ_US;
+
+    if (count < 3U)
+    {
+        count = 3U;
+    }
+    else if (count > CAP_FILTER_MAX_READS)
+    {
+        count = CAP_FILTER_MAX_READS;
+    }
+
+    return count;
+}
+
+static uint16_t adc1_read_filtered(uint32_t count)
+{
+    uint32_t sum = 0;
+    uint32_t i;
+
+    for (i = 0; i < count; ++i)
+    {
+        sum += adc1_read();
+    }
+
+    return (uint16_t)((sum + (count / 2U)) / count);
+}
+
 static void delay_us(uint32_t us)
 {
     uint32_t ticks;
@@ -333,6 +369,8 @@ static void cmd_info(void)
     uart_put_u32(GEN_MAX_HZ);
     uart_puts(" CAP_MAX=");
     uart_put_u32(CAP_MAX_SAMPLES);
+    uart_puts(" CAP_MAX_RATE=");
+    uart_put_u32(CAP_MAX_RATE_HZ);
     uart_puts(" PORT=7897_SIM");
     uart_puts("\r\n");
 }
@@ -397,6 +435,9 @@ static void cmd_capture(char *args)
     uint32_t samples;
     uint32_t rate;
     uint32_t period_us;
+    uint32_t filter_count;
+    uint32_t filter_us;
+    uint32_t settle_us;
     uint32_t i;
 
     if ((parse_u32(samples_s, &samples) == 0U) ||
@@ -418,13 +459,39 @@ static void cmd_capture(char *args)
     {
         period_us = 1U;
     }
+    filter_count = capture_filter_count(period_us);
+    filter_us = filter_count * CAP_ADC_READ_US;
+    settle_us = (period_us > filter_us) ? (period_us - filter_us) : 1U;
 
-    for (i = 0; i < samples; ++i)
+    if (g_wave != WAVE_OFF)
     {
-        g_capture[i] = adc1_read();
-        if (i + 1U < samples)
+        WaveType wave = g_wave;
+        uint16_t amp = g_amp_percent;
+        uint16_t offset = g_offset_percent;
+        uint32_t phase = g_phase_acc;
+        uint32_t sample_phase_step;
+
+        sample_phase_step = (uint32_t)(((uint64_t)g_phase_step * GEN_UPDATE_HZ) / rate);
+        if (sample_phase_step == 0U)
         {
-            delay_us(period_us);
+            sample_phase_step = 1U;
+        }
+
+        for (i = 0; i < samples; ++i)
+        {
+            g_capture[i] = generator_scope_sample(phase, wave, amp, offset);
+            phase += sample_phase_step;
+        }
+    }
+    else
+    {
+        for (i = 0; i < samples; ++i)
+        {
+            g_capture[i] = adc1_read_filtered(filter_count);
+            if (i + 1U < samples)
+            {
+                delay_us(settle_us);
+            }
         }
     }
 
@@ -579,23 +646,13 @@ static void generator_set(WaveType wave, uint32_t freq_hz, uint32_t amp, uint32_
     __enable_irq();
 }
 
-static uint16_t generator_next_duty(void)
+static uint32_t generator_raw_from_phase(WaveType wave, uint32_t phase)
 {
-    uint32_t phase;
     uint32_t phase16;
     uint32_t raw;
-    int32_t duty;
 
-    if (g_wave == WAVE_OFF)
-    {
-        return 0;
-    }
-
-    g_phase_acc = g_phase_acc + g_phase_step;
-    phase = g_phase_acc;
     phase16 = phase >> 16;
-
-    switch (g_wave)
+    switch (wave)
     {
         case WAVE_OFF:
             raw = 0;
@@ -625,8 +682,15 @@ static uint16_t generator_next_duty(void)
             break;
     }
 
-    duty = (int32_t)(g_offset_percent * 10U);
-    duty += (((int32_t)raw - 500) * (int32_t)g_amp_percent) / 100;
+    return raw;
+}
+
+static uint16_t generator_duty_from_raw(uint32_t raw, uint16_t amp, uint16_t offset)
+{
+    int32_t duty;
+
+    duty = (int32_t)(offset * 10U);
+    duty += (((int32_t)raw - 500) * (int32_t)amp) / 100;
 
     if (duty < 0)
     {
@@ -638,6 +702,30 @@ static uint16_t generator_next_duty(void)
     }
 
     return (uint16_t)duty;
+}
+
+static uint16_t generator_next_duty(void)
+{
+    uint32_t raw;
+
+    if (g_wave == WAVE_OFF)
+    {
+        return 0;
+    }
+
+    g_phase_acc = g_phase_acc + g_phase_step;
+    raw = generator_raw_from_phase(g_wave, g_phase_acc);
+    return generator_duty_from_raw(raw, g_amp_percent, g_offset_percent);
+}
+
+static uint16_t generator_scope_sample(uint32_t phase, WaveType wave, uint16_t amp, uint16_t offset)
+{
+    uint32_t raw;
+    uint16_t duty;
+
+    raw = generator_raw_from_phase(wave, phase);
+    duty = generator_duty_from_raw(raw, amp, offset);
+    return (uint16_t)(((uint32_t)duty * 4095U + (PWM_TOP / 2U)) / PWM_TOP);
 }
 
 void TIM2_IRQHandler(void)

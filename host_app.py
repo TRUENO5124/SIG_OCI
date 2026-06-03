@@ -304,7 +304,7 @@ class HostApp(tk.Tk):
 
         ttk.Label(controls, text="Oscilloscope", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
         self._labeled_spinbox(controls, "Samples", self.samples, 1, 512, 1)
-        self._labeled_spinbox(controls, "Sample Rate (Hz)", self.sample_rate, 10, 20000, 10)
+        self._labeled_spinbox(controls, "Sample Rate (Hz)", self.sample_rate, 10, 51200, 10)
         ttk.Button(controls, text="Capture", command=self.capture).pack(fill="x", pady=(8, 14))
 
         ttk.Button(controls, text="Ping", command=self.ping).pack(fill="x")
@@ -447,4 +447,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

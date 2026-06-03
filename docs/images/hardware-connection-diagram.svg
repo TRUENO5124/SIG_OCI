@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <rect width="1600" height="1000" fill="#f6f8fb"/>
+  <text x="70" y="88" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="40" font-weight="700" fill="#1a2434">STM32F103C8T6 简易信号源与示波器硬件连接图</text>
+  <text x="75" y="128" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="22" fill="#5c6b80">DAPmini 负责 SWD 下载调试和 USART1 串口通信；PA6 输出信号，PA0 采集信号。</text>
+
+  <rect x="105" y="235" width="420" height="450" fill="#ffffff" stroke="#d2dae6" stroke-width="2"/>
+  <text x="140" y="295" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#1a2434">DAPmini</text>
+  <text x="140" y="330" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="22" fill="#5c6b80">USB 接电脑</text>
+
+  <rect x="910" y="190" width="500" height="610" fill="#17639e" stroke="#0c4678" stroke-width="3"/>
+  <text x="1035" y="260" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">STM32F103C8T6</text>
+  <text x="1050" y="296" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="24" fill="#d7ecff">Blue Pill / 最小系统板</text>
+
+  <g font-family="Consolas, Microsoft YaHei, monospace" font-size="22" fill="#111827">
+    <text x="330" y="362">SWDIO</text>
+    <text x="330" y="417">SWCLK</text>
+    <text x="330" y="472">GND</text>
+    <text x="330" y="527">3V3/VTref</text>
+    <text x="330" y="592">RX</text>
+    <text x="330" y="647">TX</text>
+  </g>
+  <g font-family="Consolas, Microsoft YaHei, monospace" font-size="22" fill="#ffffff">
+    <text x="945" y="362">PA13 / SWDIO</text>
+    <text x="945" y="417">PA14 / SWCLK</text>
+    <text x="945" y="472">GND</text>
+    <text x="945" y="527">3.3V</text>
+    <text x="945" y="592">PA9 / USART1_TX</text>
+    <text x="945" y="647">PA10 / USART1_RX</text>
+    <text x="945" y="727">PA6 / TIM3_CH1 PWM</text>
+    <text x="945" y="782">PA0 / ADC1_IN0</text>
+  </g>
+
+  <g fill="#f0a12a">
+    <circle cx="500" cy="355" r="8"/><circle cx="500" cy="410" r="8"/><circle cx="500" cy="465" r="8"/>
+    <circle cx="500" cy="520" r="8"/><circle cx="500" cy="585" r="8"/><circle cx="500" cy="640" r="8"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="910" cy="355" r="8"/><circle cx="910" cy="410" r="8"/><circle cx="910" cy="465" r="8"/>
+    <circle cx="910" cy="520" r="8"/><circle cx="910" cy="585" r="8"/><circle cx="910" cy="640" r="8"/>
+    <circle cx="910" cy="720" r="8"/><circle cx="910" cy="775" r="8"/>
+  </g>
+
+  <line x1="500" y1="355" x2="910" y2="355" stroke="#267ebe" stroke-width="5"/>
+  <line x1="500" y1="410" x2="910" y2="410" stroke="#267ebe" stroke-width="5"/>
+  <line x1="500" y1="465" x2="910" y2="465" stroke="#1a9c57" stroke-width="5"/>
+  <line x1="500" y1="520" x2="910" y2="520" stroke="#d64646" stroke-width="5"/>
+  <line x1="500" y1="585" x2="910" y2="585" stroke="#eb9623" stroke-width="5"/>
+  <line x1="500" y1="640" x2="910" y2="640" stroke="#eb9623" stroke-width="5"/>
+
+  <g font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="18">
+    <rect x="605" y="322" width="170" height="28" fill="#f6f8fb"/>
+    <text x="612" y="345" fill="#5c6b80">SWDIO 下载调试</text>
+    <rect x="605" y="377" width="170" height="28" fill="#f6f8fb"/>
+    <text x="612" y="400" fill="#5c6b80">SWCLK 下载调试</text>
+    <rect x="650" y="432" width="90" height="28" fill="#f6f8fb"/>
+    <text x="655" y="455" fill="#1a9c57">GND 共地</text>
+    <rect x="642" y="487" width="125" height="28" fill="#f6f8fb"/>
+    <text x="647" y="510" fill="#d64646">3.3V / VTref</text>
+    <rect x="555" y="552" width="310" height="28" fill="#f6f8fb"/>
+    <text x="560" y="575" fill="#1a2434">DAPmini RX -> STM32 PA9/TX</text>
+    <rect x="555" y="607" width="320" height="28" fill="#f6f8fb"/>
+    <text x="560" y="630" fill="#1a2434">DAPmini TX -> STM32 PA10/RX</text>
+  </g>
+
+  <path d="M 910 720 L 835 720 L 835 775 L 910 775" fill="none" stroke="#1a9c57" stroke-width="6"/>
+  <path d="M 872 707 C 795 710 795 790 872 793" fill="none" stroke="#1a9c57" stroke-width="5"/>
+  <text x="610" y="742" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="20" fill="#1a9c57">PA6 -> PA0 闭环自测</text>
+
+  <rect x="895" y="835" width="530" height="70" fill="#eef4fa" stroke="#d2dae6" stroke-width="2"/>
+  <text x="955" y="878" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="24" fill="#5c6b80">面包板公共地线 / 3.3V 供电参考</text>
+
+  <rect x="105" y="735" width="680" height="190" fill="#ffffff" stroke="#d2dae6" stroke-width="2"/>
+  <text x="140" y="795" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="30" font-weight="700" fill="#1a2434">连接要点</text>
+  <text x="140" y="840" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="22" fill="#1a2434">1. 串口必须交叉：RX 接 PA9，TX 接 PA10。</text>
+  <text x="140" y="880" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="22" fill="#1a2434">2. PA6 和 PA0 用一根杜邦线相连，用于闭环演示。</text>
+  <text x="140" y="920" font-family="Microsoft YaHei, SimHei, Arial, sans-serif" font-size="22" fill="#1a2434">3. 所有模块必须共地，通信波特率为 115200。</text>
+</svg>
